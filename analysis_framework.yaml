@@ -1,0 +1,65 @@
+# AI股票分析系统 - 分析框架配置文件
+# 文档版本：V1.0
+# 创建时间：2026-01-30
+# 说明：此文件定义了AI分析的问题框架和报告模板，可根据需要修改
+
+# 预设的分析问题框架
+analysis_framework:
+  - question: "PEST宏观环境分析"
+    prompt: "从政治、经济、社会、技术四个维度分析该公司所处行业的宏观环境，识别主要机会和风险。"
+
+  - question: "公司商业模式与定性分析"
+    prompt: "公司是否具备持久竞争优势（经济护城河）？如品牌、专利、成本优势、转换成本或网络效应，其护城河宽度能否在未来10年抵御竞争侵蚀？"  
+    
+  - question: "核心财务指标分析"
+    prompt: "根据ROE({roe})、总市值({market_cap_billion}亿元)等多维度财务指标，公司盈利能力是否长期稳定且显著高于行业均值？毛利率、净利率、ROE/ROIC是否持续高于同行，并具备可解释的成因？"
+    
+  - question: "行业周期与竞争格局分析"
+    prompt: "公司在行业周期与竞争格局中的位置如何？是否处于需求稳定或扩张的赛道，有无被新技术/替代品颠覆的风险，行业门槛能否阻挡新进入者？"
+    
+  - question: "现金流分析"
+    prompt: "公司现金流生成能力是否与净利润匹配？经营性现金流是否持续为正且覆盖资本开支与分红，是否存在利润虚增或应收款膨胀的信号？"
+    
+  - question: "管理层品质分析"
+    prompt: "管理层是否诚信且能力出众？过往资本配置、股东回报、战略执行力是否体现长期主义，有无频繁变更战略、利益输送或高位套现记录？"
+    
+  - question: "成长质量分析"
+    prompt: "公司成长质量如何？利润增长是否主要来自内生性高ROIC再投资，而非并购、财务杠杆或非经常性收益？增长是否牺牲资本回报或抬高风险？"
+
+  - question: "市场定价偏离度"
+    prompt: "当前市场定价是否严重偏离公司基本面？股价是否已反映过度乐观预期或恐慌情绪，基于格雷厄姆与巴菲特的“市场先生”理论，现价是否提供逆向投资的机会？"
+
+  - question: "综合投资建议"
+    prompt: "基于以上综合分析，给出具体的投资建议（买入/持有/卖出）并说明理由，同时提供详细的风险提示。"
+
+# 报告模板配置
+report_template:
+  title: "{stock_name}({stock_code})投资分析报告"
+  disclaimer: "本报告由AI生成，仅供研究参考，不构成投资建议。投资有风险，决策需谨慎。"
+  sections:
+    - "PEST宏观环境分析"
+    - "公司商业模式与定性分析" 
+    - "核心财务指标分析"
+    - "行业周期与竞争格局分析"
+    - "现金流分析"
+    - "管理层品质分析"
+    - "成长质量分析"
+    - "市场定价偏离度"
+    - "综合投资建议"
+
+# 数据源配置
+data_sources:
+  - name: "AKShare"
+    description: "免费A股数据接口"
+    supported_fields: ["pe", "pb", "dividend_yield", "market_cap"]
+    
+  - name: "Tushare Pro"
+    description: "专业金融数据接口（需Token）"
+    supported_fields: ["pe", "pb", "dividend_yield", "roe", "revenue_growth"]
+
+# 系统配置
+system_config:
+  max_retries: 3
+  timeout: 30
+  output_format: ["markdown", "pdf"]
+  default_output_dir: "./reports/"
