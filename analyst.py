@@ -69,7 +69,7 @@ def _build_prompt(stock_code: str, stock_name: str, fundamentals: Dict[str, Any]
     roe = fundamentals.get("ROE(TTM)", "N/A")
     
     lines = []
-    lines.append("你是一个专业的股票分析师，请基于以下信息对股票进行深度分析。")
+    lines.append("你是一个资深价值投资大师，请基于以下信息对公司基本面进行深度分析。")
     lines.append("")
     lines.append(f"**股票信息**: {stock_name}({stock_code})")
     lines.append("")
@@ -127,8 +127,8 @@ def _load_env_config() -> Dict[str, str]:
     
     return config
 
-def _call_deepseek_api(prompt: str, max_retries: int = 3) -> Optional[str]:
-    """调用DeepSeek API进行智能分析"""
+def _call_deepseek_api_single_question(question_prompt: str, conversation_history: List[Dict] = None, max_retries: int = 3) -> Optional[str]:
+    """调用DeepSeek API进行单问题智能分析"""
     
     # 优先从.env文件读取API密钥
     env_config = _load_env_config()
@@ -145,23 +145,32 @@ def _call_deepseek_api(prompt: str, max_retries: int = 3) -> Optional[str]:
         base_url="https://api.deepseek.com"
     )
     
+    # 构建消息历史
+    messages = [
+        {
+            "role": "system", 
+            "content": "你是一名资深证券价值投资大师，擅长基本面分析和投资建议。请提供深入、专业的分析，基于数据给出有依据的判断。"
+        }
+    ]
+    
+    # 添加对话历史（如果有）
+    if conversation_history:
+        messages.extend(conversation_history)
+    
+    # 添加当前问题
+    messages.append({
+        "role": "user",
+        "content": question_prompt
+    })
+    
     for attempt in range(max_retries):
         try:
             response = client.chat.completions.create(
                 model="deepseek-reasoner",
                 extra_body={"thinking": {"type": "enabled"}},
-                messages=[
-                    {
-                        "role": "system", 
-                        "content": "你是一名资深证券价值投资大师，擅长基本面分析和投资建议。请提供深入、专业的分析，基于数据给出有依据的判断。"
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
+                messages=messages,
                 temperature=0.7,
-                # max_tokens=4000
+                # max_tokens=2000  # 每个问题限制token数
             )
             
             return response.choices[0].message.content
@@ -174,6 +183,103 @@ def _call_deepseek_api(prompt: str, max_retries: int = 3) -> Optional[str]:
             else:
                 print("[ERROR] API调用达到最大重试次数")
                 return None
+
+
+def _call_deepseek_api(prompt: str, max_retries: int = 3) -> Optional[str]:
+    """调用DeepSeek API进行智能分析（兼容旧版本）"""
+    return _call_deepseek_api_single_question(prompt, None, max_retries)
+
+def _generate_analysis_sequentially(stock_code: str, stock_name: str, fundamentals: Dict[str, Any]) -> Optional[str]:
+    """使用逐次提问方式生成AI分析报告"""
+    config = _load_analysis_framework()
+    framework = config.get("analysis_framework", [])
+    
+    # 准备基础数据
+    pe = fundamentals.get("PE(TTM)估算", "N/A")
+    pb = fundamentals.get("PB", "N/A")
+    dividend_yield = fundamentals.get("股息率", "N/A")
+    market_cap = fundamentals.get("总市值", "N/A")
+    market_cap_billion = fundamentals.get("总市值(亿)", "N/A")
+    roe = fundamentals.get("ROE(TTM)", "N/A")
+    
+    # 构建股票基本信息提示词
+    stock_info_prompt = f"""
+股票基本信息：
+- 股票名称：{stock_name}
+- 股票代码：{stock_code}
+- 估值数据：
+"""
+    
+    if fundamentals:
+        for key, value in fundamentals.items():
+            stock_info_prompt += f"  - {key}: {value}\n"
+    else:
+        stock_info_prompt += "  - 暂未成功获取估值指标数据\n"
+    
+    # 对话历史记录
+    conversation_history = []
+    
+    # 添加股票基本信息到对话历史
+    conversation_history.append({
+        "role": "user",
+        "content": stock_info_prompt
+    })
+    
+    # 逐次处理每个分析问题
+    analysis_results = []
+    
+    for i, item in enumerate(framework, 1):
+        question = item["question"]
+        prompt_template = item["prompt"]
+        
+        # 格式化提示词
+        formatted_prompt = prompt_template.format(
+            pe=pe, 
+            pb=pb, 
+            dividend_yield=dividend_yield,
+            market_cap=market_cap,
+            market_cap_billion=market_cap_billion,
+            roe=roe,
+            stock_code=stock_code, 
+            stock_name=stock_name
+        )
+        
+        print(f"[INFO] 正在分析第{i}/{len(framework)}个问题: {question}")
+        
+        # 调用API获取单个问题的分析结果
+        response = _call_deepseek_api_single_question(formatted_prompt, conversation_history)
+        
+        if response is None:
+            print(f"[ERROR] 第{i}个问题分析失败，跳过该问题")
+            analysis_results.append(f"### {question}\n\n*分析失败，请重试*\n")
+            continue
+        
+        # 将问题和分析结果添加到对话历史
+        conversation_history.append({
+            "role": "user",
+            "content": formatted_prompt
+        })
+        conversation_history.append({
+            "role": "assistant",
+            "content": response
+        })
+        
+        # 将分析结果添加到结果列表
+        analysis_results.append(f"### {question}\n\n{response}\n")
+        
+        # 添加延迟，避免API调用过于频繁
+        import time
+        time.sleep(1)
+    
+    # 组合所有分析结果
+    if analysis_results:
+        combined_analysis = f"# {stock_name}({stock_code})投资分析报告\n\n"
+        combined_analysis += "## 综合分析结果\n\n"
+        combined_analysis += "\n".join(analysis_results)
+        return combined_analysis
+    else:
+        return None
+
 
 def _format_report_content(ai_response: str, stock_code: str, stock_name: str) -> str:
     """格式化AI分析结果为完整的报告"""
@@ -343,9 +449,6 @@ def _generate_report_content(stock_code: str, stock_name: str) -> str:
                 print(f"[INFO] 检测到使用模拟数据，启用断点模式")
                 use_template = True
     
-    # 构建AI分析提示词
-    prompt = _build_prompt(stock_code, stock_name, fundamentals)
-    
     if use_template:
         # 直接使用本地模板，跳过DeepSeek API调用
         print(f"[INFO] 数据获取不完整/模拟数据，跳过DeepSeek API调用，使用本地模板")
@@ -371,9 +474,9 @@ def _generate_report_content(stock_code: str, stock_name: str) -> str:
 **注意**: 本报告为模板内容，建议检查网络连接和数据源稳定性后重新运行分析。
 """
     else:
-        # 调用DeepSeek API进行智能分析
-        print(f"[INFO] 数据获取完整，开始DeepSeek AI分析 {stock_name}({stock_code})...")
-        ai_response = _call_deepseek_api(prompt)
+        # 使用逐次提问的方式进行DeepSeek AI分析
+        print(f"[INFO] 数据获取完整，开始DeepSeek AI逐次分析 {stock_name}({stock_code})...")
+        ai_response = _generate_analysis_sequentially(stock_code, stock_name, fundamentals)
         
         if ai_response is None:
             # API调用失败，使用本地模板作为备用方案
