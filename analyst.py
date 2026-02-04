@@ -8,6 +8,7 @@ from openai import OpenAI
 
 from screener import _fetch_eastmoney_a_spot
 from lixinger_provider import get_fundamental_provider
+from news_formatter import StockNewsFormatter
 
 
 def _load_analysis_framework() -> Dict[str, Any]:
@@ -190,7 +191,7 @@ def _call_deepseek_api(prompt: str, max_retries: int = 3) -> Optional[str]:
     return _call_deepseek_api_single_question(prompt, None, max_retries)
 
 def _generate_analysis_sequentially(stock_code: str, stock_name: str, fundamentals: Dict[str, Any]) -> Optional[str]:
-    """使用逐次提问方式生成AI分析报告"""
+    """使用逐次提问方式生成AI分析报告（集成新闻数据）"""
     config = _load_analysis_framework()
     framework = config.get("analysis_framework", [])
     
@@ -201,6 +202,9 @@ def _generate_analysis_sequentially(stock_code: str, stock_name: str, fundamenta
     market_cap = fundamentals.get("总市值", "N/A")
     market_cap_billion = fundamentals.get("总市值(亿)", "N/A")
     roe = fundamentals.get("ROE(TTM)", "N/A")
+    
+    # 初始化新闻格式化器
+    news_formatter = StockNewsFormatter()
     
     # 构建股票基本信息提示词
     stock_info_prompt = f"""
@@ -232,17 +236,40 @@ def _generate_analysis_sequentially(stock_code: str, stock_name: str, fundamenta
         question = item["question"]
         prompt_template = item["prompt"]
         
-        # 格式化提示词
-        formatted_prompt = prompt_template.format(
-            pe=pe, 
-            pb=pb, 
-            dividend_yield=dividend_yield,
-            market_cap=market_cap,
-            market_cap_billion=market_cap_billion,
-            roe=roe,
-            stock_code=stock_code, 
-            stock_name=stock_name
-        )
+        # 检查是否为综合投资建议步骤，如果是则添加新闻数据
+        if question == "综合投资建议":
+            print(f"[INFO] 正在获取{stock_name}的最新新闻数据...")
+            news_data = news_formatter.format_news_for_analysis(stock_code, stock_name)
+            news_summary = news_formatter.get_news_summary(stock_code, stock_name)
+            
+            print(f"[INFO] 成功获取到 {news_summary['news_count']} 条新闻")
+            if news_summary['latest_news_time']:
+                print(f"[INFO] 最新新闻时间: {news_summary['latest_news_time']}")
+            
+            # 格式化提示词，包含新闻数据
+            formatted_prompt = prompt_template.format(
+                pe=pe, 
+                pb=pb, 
+                dividend_yield=dividend_yield,
+                market_cap=market_cap,
+                market_cap_billion=market_cap_billion,
+                roe=roe,
+                stock_code=stock_code, 
+                stock_name=stock_name,
+                news_data=news_data
+            )
+        else:
+            # 其他步骤使用标准格式化
+            formatted_prompt = prompt_template.format(
+                pe=pe, 
+                pb=pb, 
+                dividend_yield=dividend_yield,
+                market_cap=market_cap,
+                market_cap_billion=market_cap_billion,
+                roe=roe,
+                stock_code=stock_code, 
+                stock_name=stock_name
+            )
         
         print(f"[INFO] 正在分析第{i}/{len(framework)}个问题: {question}")
         
@@ -276,6 +303,17 @@ def _generate_analysis_sequentially(stock_code: str, stock_name: str, fundamenta
         combined_analysis = f"# {stock_name}({stock_code})投资分析报告\n\n"
         combined_analysis += "## 综合分析结果\n\n"
         combined_analysis += "\n".join(analysis_results)
+        
+        # 添加新闻数据摘要
+        news_summary = news_formatter.get_news_summary(stock_code, stock_name)
+        if news_summary['news_count'] > 0:
+            combined_analysis += f"\n## 新闻数据摘要\n\n"
+            combined_analysis += f"- **新闻数量**: {news_summary['news_count']}条\n"
+            combined_analysis += f"- **最新新闻时间**: {news_summary['latest_news_time'] or '未知'}\n"
+            combined_analysis += f"- **新闻来源**: {', '.join(news_summary['sources'])}\n"
+            if news_summary['keywords']:
+                combined_analysis += f"- **关键词**: {', '.join(news_summary['keywords'][:5])}\n"
+        
         return combined_analysis
     else:
         return None
