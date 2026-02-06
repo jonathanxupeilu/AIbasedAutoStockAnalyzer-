@@ -4,14 +4,15 @@ from typing import Any, Dict, List
 
 from .core.analyst import analyze_stock
 from .core.screener import run_screener
+from .core.stock_pool_manager import get_stock_pool_manager
 
 # 获取项目根目录
 PROJECT_ROOT = Path(__file__).parent.parent
 
 # 系统配置参数
 CONFIG: Dict[str, Any] = {
-    "screening_criteria": {"pe_max": 25, "pb_max": 4},  # 量化筛选标准：PE最大25倍，PB最大4倍
-    "candidate_list_file": str(PROJECT_ROOT / "data" / "candidate_stocks.md"),  # 候选股票池文件路径
+    "screening_criteria": {"pe_max": 25, "pb_max": 2},  # 量化筛选标准：PE最大25倍，PB最大2倍
+    "candidate_list_file": str(PROJECT_ROOT / "data" / "stock_pool.md"),  # 统一股票池文件路径
     "report_output_dir": str(PROJECT_ROOT / "reports"),  # 报告输出目录
     "summary_report_file": str(PROJECT_ROOT / "reports" / "综合分析报告.md"),  # 综合分析报告文件路径
 }
@@ -63,10 +64,27 @@ def main() -> None:
         print("筛选未得到候选股，流程结束。")
         return
 
-    # 显示筛选结果
-    print("\n========== 量化筛选候选池 ==========")
-    print(candidate_df.to_string(index=False))
-    print("=====================================\n")
+    # 显示股票池信息（替换终端打印）
+    stock_pool_manager = get_stock_pool_manager()
+    stock_pool_df = stock_pool_manager.get_stock_pool()
+    
+    if not stock_pool_df.empty:
+        print("\n========== 股票池信息 ==========")
+        print(f"当前股票池包含 {len(stock_pool_df)} 只股票")
+        print(f"详细股票池已保存到: {CONFIG['candidate_list_file']}")
+        
+        # 检查列名并统计类型分布（避免KeyError）
+        if "类型" in stock_pool_df.columns:
+            quant_count = len(stock_pool_df[stock_pool_df["类型"] == "quant_screened"])
+            manual_count = len(stock_pool_df[stock_pool_df["类型"] == "manual_selected"])
+            print(f"量化筛选股票: {quant_count} 只")
+            print(f"自选股票: {manual_count} 只")
+        else:
+            print("类型分布信息暂不可用")
+            
+        print("==================================\n")
+    else:
+        print("\n[INFO] 股票池为空，请检查数据源配置\n")
 
     # 步骤2：解析命令行参数，获取待分析股票代码
     parser = argparse.ArgumentParser(description="AI股票分析流水线")

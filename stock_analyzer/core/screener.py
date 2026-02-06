@@ -5,6 +5,7 @@ import pandas as pd
 import requests
 
 from ..api.lixinger_provider import get_fundamental_provider
+from .stock_pool_manager import get_stock_pool_manager
 
 
 def _build_dummy_market_data() -> pd.DataFrame:
@@ -244,5 +245,12 @@ def run_screener(criteria: Dict[str, Any], candidate_output_path: str) -> pd.Dat
     df = _load_market_data()
     df = _normalize_columns(df)
     screened = _apply_screening(df, criteria)
+    
+    # 保存到传统候选池文件（保持兼容性）
     _save_candidate_markdown(screened, candidate_output_path)
+    
+    # 更新统一股票池
+    stock_pool_manager = get_stock_pool_manager()
+    stock_pool_manager.update_stock_pool(screened)
+    
     return screened

@@ -17,7 +17,7 @@ AIbasedAutoStockAnalyzer/
 │
 ├── stock_analyzer/                # 核心代码包
 │   ├── __init__.py
-│   ├── main_pipeline.py            # 主流程入口
+│   ├── main_pipeline.py            # 主流程入口（支持资产配置模块）
 │   ├── api/                       # API接口层
 │   │   ├── __init__.py
 │   │   └── lixinger_provider.py   # 理杏仁API数据提供者
@@ -25,7 +25,8 @@ AIbasedAutoStockAnalyzer/
 │   │   ├── __init__.py
 │   │   ├── analyst.py             # AI分析核心逻辑
 │   │   ├── screener.py            # 股票筛选器
-│   │   └── technical_analyzer.py  # 技术分析器（B+C方案实现）
+│   │   ├── technical_analyzer.py  # 技术分析器（B+C方案实现）
+│   │   └── stock_pool_manager.py  # 股票池管理器（支持CSV导入）
 │   └── utils/                     # 通用工具
 │       ├── __init__.py
 │       └── news_formatter.py      # 新闻格式化工具
@@ -70,7 +71,10 @@ AIbasedAutoStockAnalyzer/
 │   └── tushare_token.txt       # Tushare API令牌
 │
 ├── data/                         # 数据文件
-│   └── candidate_stocks.md      # 候选股票列表
+│   ├── stock_pool.md           # 统一股票池（合并量化筛选和自选股）
+│   ├── watch_list.yaml         # 自选股配置文件
+│   ├── quant_screened.json     # 量化筛选结果缓存
+│   └── candidate_stocks.md     # 候选股票列表（兼容旧版本）
 │
 ├── reports/                      # 生产报告输出目录
 │   ├── 000001_平安银行.md
@@ -203,6 +207,33 @@ python -m pytest tests/integration/test_b_plan_verification.py -v
   - 数据质量评估系统（excellent/good/warning/critical）
   - 集成级别决策（deep/moderate/basic/fallback）
 
+## 新功能模块说明
+
+### 股票池管理模块 (Stock Pool Manager)
+- **位置**: `stock_analyzer/core/stock_pool_manager.py`
+- **功能**: 统一管理股票池，支持CSV导入和自选股管理
+- **数据文件**: 
+  - `data/stock_pool.md`: 统一股票池（Markdown格式）
+  - `data/watch_list.yaml`: 自选股配置文件
+  - `data/quant_screened.json`: 量化筛选结果缓存
+- **特点**: 支持用户手动筛选股票池，替代原有的API量化筛选
+
+### 资产配置模块 (Asset Allocation Module)
+- **位置**: 可选的独立模块（暂未实现）
+- **功能**: 提供大类资产配置建议，支持OCR持仓解析
+- **特点**: 
+  - 完全独立模块，可选择是否启用
+  - 文本输出格式，不影响主流程
+  - 基于专业资产配置理论
+
+### 评分引擎模块 (Scoring Engine)
+- **位置**: 可配置的评分规则系统
+- **功能**: 多规则综合评分，支持自定义评分策略
+- **特点**:
+  - 支持多套评分规则配置
+  - 可配置权重和阈值
+  - 用户可自定义评分策略
+
 ## 未来扩展
 
 根据Google工程实践，未来可考虑：
@@ -211,3 +242,4 @@ python -m pytest tests/integration/test_b_plan_verification.py -v
 2. 将`technical_analyzer.py`进一步拆分为独立子模块
 3. 添加性能监控和日志系统
 4. 实现更完善的单元测试覆盖
+5. 完善资产配置模块和评分引擎模块的实现

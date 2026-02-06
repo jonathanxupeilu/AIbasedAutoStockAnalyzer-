@@ -9,6 +9,9 @@
 - 📈 **实时数据**: 东方财富API获取实时估值数据
 - 📋 **配置化框架**: YAML配置分析问题和报告模板
 - 🔒 **环境隔离**: 独立的Python虚拟环境
+- 📥 **灵活导入**: 支持CSV格式股票池导入，用户可手动筛选
+- ⚖️ **资产配置**: 可选的大类资产配置建议模块
+- 🎯 **智能评分**: 多规则评分引擎，支持自定义评分策略
 
 ## 快速开始
 
@@ -76,16 +79,20 @@ AIbasedAutoStockAnalyzer/
 │   ├── core/                      # 核心业务逻辑
 │   │   ├── analyst.py            # AI分析核心模块
 │   │   ├── screener.py           # 股票筛选器
-│   │   └── technical_analyzer.py # 技术分析器
+│   │   ├── technical_analyzer.py # 技术分析器
+│   │   └── stock_pool_manager.py # 股票池管理器（支持CSV导入）
 │   ├── api/                       # 接口定义层
 │   │   └── lixinger_provider.py  # 理杏仁数据提供器
 │   ├── utils/                     # 工具模块
 │   │   └── news_formatter.py     # 新闻格式化器
-│   └── main_pipeline.py          # 主程序入口
+│   └── main_pipeline.py          # 主程序入口（支持资产配置模块）
 ├── config/                        # 配置文件
 │   └── analysis_framework.yaml    # 分析框架配置
 ├── data/                          # 数据文件
-│   └── candidate_stocks.md        # 候选股票列表
+│   ├── stock_pool.md             # 统一股票池（合并量化筛选和自选股）
+│   ├── watch_list.yaml           # 自选股配置文件
+│   ├── quant_screened.json       # 量化筛选结果缓存
+│   └── candidate_stocks.md       # 候选股票列表（兼容旧版本）
 ├── tests/                         # 测试目录
 │   ├── integration/              # 集成测试
 │   └── unit/                     # 单元测试
