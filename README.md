@@ -16,15 +16,20 @@
 
 #### Windows用户
 ```bash
-# 双击运行或命令行执行
-run_analysis.bat --stock_codes 000001 600519
+# 激活虚拟环境
+venv\Scripts\activate
+
+# 运行分析
+python run_from_package.py --stock_codes 000001 600519
 ```
 
 #### Linux/Mac用户
 ```bash
-# 赋予执行权限并运行
-chmod +x run_analysis.sh
-./run_analysis.sh --stock_codes 000001 600519
+# 激活虚拟环境
+source venv/bin/activate
+
+# 运行分析
+python run_from_package.py --stock_codes 000001 600519
 ```
 
 ### 方式二：手动设置
@@ -59,24 +64,41 @@ cp .env.example .env
 
 5. **运行分析**
 ```bash
-python main_pipeline.py --stock_codes 000001 600519
+python run_from_package.py --stock_codes 000001 600519
 ```
 
 ## 项目结构
 
 ```
 AIbasedAutoStockAnalyzer/
-├── venv/                    # Python虚拟环境
-├── reports/                 # 分析报告输出目录
-├── main_pipeline.py         # 主程序入口
-├── analyst.py              # AI分析核心模块
-├── screener.py             # 股票筛选器
-├── analysis_framework.yaml # 分析框架配置
-├── requirements.txt        # Python依赖包
-├── .env.example            # 环境变量示例
-├── run_analysis.bat        # Windows启动脚本
-├── run_analysis.sh         # Linux/Mac启动脚本
-└── README.md               # 项目说明
+├── venv/                          # Python虚拟环境
+├── stock_analyzer/                 # 核心代码包
+│   ├── core/                      # 核心业务逻辑
+│   │   ├── analyst.py            # AI分析核心模块
+│   │   ├── screener.py           # 股票筛选器
+│   │   └── technical_analyzer.py # 技术分析器
+│   ├── api/                       # 接口定义层
+│   │   └── lixinger_provider.py  # 理杏仁数据提供器
+│   ├── utils/                     # 工具模块
+│   │   └── news_formatter.py     # 新闻格式化器
+│   └── main_pipeline.py          # 主程序入口
+├── config/                        # 配置文件
+│   └── analysis_framework.yaml    # 分析框架配置
+├── data/                          # 数据文件
+│   └── candidate_stocks.md        # 候选股票列表
+├── tests/                         # 测试目录
+│   ├── integration/              # 集成测试
+│   └── unit/                     # 单元测试
+├── bin/                           # 可执行脚本
+│   ├── activate_venv.bat          # Windows虚拟环境激活脚本
+│   └── activate_venv.sh           # Linux/Mac虚拟环境激活脚本
+├── scripts/                       # 辅助脚本
+├── docs/                          # 文档目录
+├── reports/                       # 分析报告输出目录
+├── run_from_package.py            # 主启动脚本
+├── requirements.txt               # Python依赖包
+├── pyproject.toml                 # 项目配置
+└── README.md                      # 项目说明
 ```
 
 ## 配置说明
@@ -107,17 +129,17 @@ DEEPSEEK_API_KEY=your_deepseek_api_key_here
 
 ### 分析单只股票
 ```bash
-python main_pipeline.py --stock_codes 000001
+python run_from_package.py --stock_codes 000001
 ```
 
 ### 分析多只股票
 ```bash
-python main_pipeline.py --stock_codes 000001 600519 300750
+python run_from_package.py --stock_codes 000001 600519 300750
 ```
 
 ### 查看帮助
 ```bash
-python main_pipeline.py --help
+python run_from_package.py --help
 ```
 
 ## 输出结果

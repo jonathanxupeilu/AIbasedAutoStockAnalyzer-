@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 import pandas as pd
 import requests
 
-from lixinger_provider import get_fundamental_provider
+from ..api.lixinger_provider import get_fundamental_provider
 
 
 def _build_dummy_market_data() -> pd.DataFrame:

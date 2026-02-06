@@ -79,6 +79,23 @@ class LixingerProvider:
         except Exception as e:
             print(f"[WARN] 缓存保存失败: {e}")
     
+    def _fetch_roe_data(self, stock_codes: List[str]) -> Dict[str, Any]:
+        """
+        获取ROE数据（预留端口）
+        
+        TODO(未来扩展): 理杏仁API的财务指标端点需要单独的API密钥或权限
+        未来可以通过以下方式扩展：
+        1. 调用理杏仁财务报表端点：/cn/company/fundamental/financial
+        2. 使用AKShare财务指标接口：ak.stock_financial_analysis_indicator()
+        3. 集成其他数据源（如东方财富、同花顺等）
+        
+        当前暂时返回空字典，ROE字段将保持为None
+        """
+        # 预留：未来可扩展ROE数据获取逻辑
+        # 目前理杏仁API的非金融端点不支持ROE等财务指标
+        # 财务指标端点需要单独的API访问权限
+        return {}
+    
     def _fetch_batch_data(self, stock_codes: List[str]) -> Optional[pd.DataFrame]:
         """批量获取理杏仁估值数据"""
         if not self.token:
@@ -149,6 +166,15 @@ class LixingerProvider:
                     
                     df = pd.DataFrame(processed_data)
                     
+                    # 尝试获取ROE数据（预留端口，当前返回空）
+                    roe_data = self._fetch_roe_data(stock_codes)
+                    if roe_data:
+                        # 将ROE数据合并到DataFrame
+                        df["ROE(年度)"] = df["代码"].map(roe_data)
+                    else:
+                        # 添加ROE字段但设为None，保持数据结构一致性
+                        df["ROE(年度)"] = None
+                    
                     # 保存到缓存
                     self._save_to_cache(cache_file, processed_data)
                     
@@ -218,11 +244,11 @@ class DummyDataProvider:
     def _build_dummy_data(self) -> pd.DataFrame:
         """构建模拟数据"""
         data = [
-            {"代码": "000001", "PE(TTM)": 8.5, "PB": 0.9, "PS(TTM)": 1.2, "股息率": 3.2, "总市值": 2800, "PE历史分位数": 0.25},
-            {"代码": "600519", "PE(TTM)": 28.0, "PB": 6.5, "PS(TTM)": 12.5, "股息率": 0.8, "总市值": 22000, "PE历史分位数": 0.75},
-            {"代码": "300750", "PE(TTM)": 35.0, "PB": 5.2, "PS(TTM)": 8.3, "股息率": 0.5, "总市值": 9800, "PE历史分位数": 0.65},
-            {"代码": "601318", "PE(TTM)": 10.2, "PB": 1.2, "PS(TTM)": 0.8, "股息率": 2.8, "总市值": 8500, "PE历史分位数": 0.35},
-            {"代码": "000858", "PE(TTM)": 25.5, "PB": 4.8, "PS(TTM)": 6.2, "股息率": 1.2, "总市值": 6800, "PE历史分位数": 0.60},
+            {"代码": "000001", "PE(TTM)": 8.5, "PB": 0.9, "PS(TTM)": 1.2, "股息率": 3.2, "总市值": 2800, "PE历史分位数": 0.25, "ROE(年度)": 12.5},
+            {"代码": "600519", "PE(TTM)": 28.0, "PB": 6.5, "PS(TTM)": 12.5, "股息率": 0.8, "总市值": 22000, "PE历史分位数": 0.75, "ROE(年度)": 25.8},
+            {"代码": "300750", "PE(TTM)": 35.0, "PB": 5.2, "PS(TTM)": 8.3, "股息率": 0.5, "总市值": 9800, "PE历史分位数": 0.65, "ROE(年度)": 18.2},
+            {"代码": "601318", "PE(TTM)": 10.2, "PB": 1.2, "PS(TTM)": 0.8, "股息率": 2.8, "总市值": 8500, "PE历史分位数": 0.35, "ROE(年度)": 15.6},
+            {"代码": "000858", "PE(TTM)": 25.5, "PB": 4.8, "PS(TTM)": 6.2, "股息率": 1.2, "总市值": 6800, "PE历史分位数": 0.60, "ROE(年度)": 20.3},
         ]
         return pd.DataFrame(data)
     

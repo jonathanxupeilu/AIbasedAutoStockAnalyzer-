@@ -3,7 +3,13 @@
 
 import os
 import sys
-from lixinger_provider import get_fundamental_provider
+from pathlib import Path
+
+# 添加项目根目录到Python路径
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
+from stock_analyzer.api.lixinger_provider import get_fundamental_provider
 
 def test_lixinger_api():
     """测试理杏仁API功能"""

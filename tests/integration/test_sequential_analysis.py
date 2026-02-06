@@ -5,9 +5,13 @@
 
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from pathlib import Path
 
-from analyst import _generate_analysis_sequentially
+# 添加项目根目录到Python路径
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
+from stock_analyzer.core.analyst import _generate_analysis_sequentially
 
 def test_sequential_analysis():
     """测试逐次提问分析功能"""

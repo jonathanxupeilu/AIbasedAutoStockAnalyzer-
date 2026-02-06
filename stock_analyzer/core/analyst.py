@@ -6,14 +6,15 @@ import os
 import yaml
 from openai import OpenAI
 
-from screener import _fetch_eastmoney_a_spot
-from lixinger_provider import get_fundamental_provider
-from news_formatter import StockNewsFormatter
+from .screener import _fetch_eastmoney_a_spot
+from ..api.lixinger_provider import get_fundamental_provider
+from ..utils.news_formatter import StockNewsFormatter
+from .technical_analyzer import TechnicalAnalyzer
 
 
 def _load_analysis_framework() -> Dict[str, Any]:
     """加载分析框架配置文件"""
-    config_path = Path(__file__).parent / "analysis_framework.yaml"
+    config_path = Path(__file__).parent.parent.parent / "config" / "analysis_framework.yaml"
     try:
         with open(config_path, 'r', encoding='utf-8') as file:
             return yaml.safe_load(file)
@@ -203,8 +204,17 @@ def _generate_analysis_sequentially(stock_code: str, stock_name: str, fundamenta
     market_cap_billion = fundamentals.get("总市值(亿)", "N/A")
     roe = fundamentals.get("ROE(TTM)", "N/A")
     
-    # 初始化新闻格式化器
+    # 初始化新闻格式化器和技术分析器
     news_formatter = StockNewsFormatter()
+    technical_analyzer = TechnicalAnalyzer()
+    
+    # 安全获取技术分析数据（采用B+C方案：模块化集成 + 智能降级）
+    print(f"[INFO] 正在获取{stock_name}的技术指标数据...")
+    technical_data = _get_enhanced_technical_analysis(technical_analyzer, stock_code, stock_name)
+    
+    # 根据技术分析质量决定集成深度
+    integration_level = _determine_integration_level(technical_data)
+    print(f"[INFO] 技术分析集成级别：{integration_level}")
     
     # 构建股票基本信息提示词
     stock_info_prompt = f"""
@@ -219,6 +229,10 @@ def _generate_analysis_sequentially(stock_code: str, stock_name: str, fundamenta
             stock_info_prompt += f"  - {key}: {value}\n"
     else:
         stock_info_prompt += "  - 暂未成功获取估值指标数据\n"
+    
+    # 添加技术分析摘要（根据集成级别智能调整）
+    technical_summary = _get_technical_summary_for_integration(technical_data, integration_level)
+    stock_info_prompt += f"\n- 技术指标概览：\n{technical_summary}"
     
     # 对话历史记录
     conversation_history = []
@@ -236,17 +250,14 @@ def _generate_analysis_sequentially(stock_code: str, stock_name: str, fundamenta
         question = item["question"]
         prompt_template = item["prompt"]
         
-        # 检查是否为综合投资建议步骤，如果是则添加新闻数据
-        if question == "综合投资建议":
-            print(f"[INFO] 正在获取{stock_name}的最新新闻数据...")
-            news_data = news_formatter.format_news_for_analysis(stock_code, stock_name)
-            news_summary = news_formatter.get_news_summary(stock_code, stock_name)
+        # 检查是否为技术指标分析步骤
+        if question == "技术指标分析":
+            print(f"[INFO] 正在准备{stock_name}的技术指标分析数据...")
             
-            print(f"[INFO] 成功获取到 {news_summary['news_count']} 条新闻")
-            if news_summary['latest_news_time']:
-                print(f"[INFO] 最新新闻时间: {news_summary['latest_news_time']}")
+            # 根据集成级别智能调整技术分析数据
+            technical_prompt = _get_technical_prompt_for_analysis(technical_data, integration_level)
             
-            # 格式化提示词，包含新闻数据
+            # 格式化提示词，包含技术分析数据
             formatted_prompt = prompt_template.format(
                 pe=pe, 
                 pb=pb, 
@@ -256,7 +267,33 @@ def _generate_analysis_sequentially(stock_code: str, stock_name: str, fundamenta
                 roe=roe,
                 stock_code=stock_code, 
                 stock_name=stock_name,
-                news_data=news_data
+                technical_analysis=technical_prompt
+            )
+        # 检查是否为综合投资建议步骤，如果是则添加新闻数据和技术分析结论
+        elif question == "综合投资建议":
+            print(f"[INFO] 正在获取{stock_name}的最新新闻数据...")
+            news_data = news_formatter.format_news_for_analysis(stock_code, stock_name)
+            news_summary = news_formatter.get_news_summary(stock_code, stock_name)
+            
+            print(f"[INFO] 成功获取到 {news_summary['news_count']} 条新闻")
+            if news_summary['latest_news_time']:
+                print(f"[INFO] 最新新闻时间: {news_summary['latest_news_time']}")
+            
+            # 根据集成级别获取技术分析结论摘要
+            technical_conclusion = _get_technical_conclusion_for_investment(technical_data, integration_level)
+            
+            # 格式化提示词，包含新闻数据和技术分析结论
+            formatted_prompt = prompt_template.format(
+                pe=pe, 
+                pb=pb, 
+                dividend_yield=dividend_yield,
+                market_cap=market_cap,
+                market_cap_billion=market_cap_billion,
+                roe=roe,
+                stock_code=stock_code, 
+                stock_name=stock_name,
+                news_data=news_data,
+                technical_conclusion=technical_conclusion
             )
         else:
             # 其他步骤使用标准格式化
@@ -320,7 +357,7 @@ def _generate_analysis_sequentially(stock_code: str, stock_name: str, fundamenta
 
 
 def _format_report_content(ai_response: str, stock_code: str, stock_name: str) -> str:
-    """格式化AI分析结果为完整的报告"""
+    """格式化AI分析结果为完整的报告（增强版：提取并显示交易信号）"""
     config = _load_analysis_framework()
     template = config.get("report_template", {})
     
@@ -332,6 +369,12 @@ def _format_report_content(ai_response: str, stock_code: str, stock_name: str) -
     title = template.get("title", "{stock_name}({stock_code})投资分析报告")
     lines.append(f"# {title.format(stock_name=stock_name, stock_code=stock_code)}")
     lines.append("")
+    
+    # 尝试提取量化交易信号（从AI响应中）
+    trading_signal_section = _extract_trading_signal_section(ai_response)
+    if trading_signal_section:
+        lines.append(trading_signal_section)
+        lines.append("")
     
     # AI分析内容
     lines.append(ai_response)
@@ -345,10 +388,84 @@ def _format_report_content(ai_response: str, stock_code: str, stock_name: str) -
     
     # 报告信息
     lines.append(f"**报告生成时间**: {now}")
-    lines.append(f"**数据来源**: 东方财富实时行情数据")
+    lines.append(f"**数据来源**: 东方财富实时行情数据 + 理杏仁API")
     lines.append(f"**AI模型**: DeepSeek")
+    lines.append(f"**技术分析**: 7大技术指标综合分析（RSI/MACD/布林带/趋势/成交量/随机指标/ADX）")
     
     return "\n".join(lines)
+
+
+def _extract_trading_signal_section(ai_response: str) -> Optional[str]:
+    """
+    从AI响应中提取量化交易信号章节
+    
+    Args:
+        ai_response: AI分析响应文本
+        
+    Returns:
+        提取的交易信号章节，如果不存在则返回None
+    """
+    # 检查是否包含量化交易信号章节
+    signal_markers = [
+        "## 量化交易信号分析",
+        "【量化交易信号】",
+        "量化信号："
+    ]
+    
+    has_signal = any(marker in ai_response for marker in signal_markers)
+    
+    if not has_signal:
+        return None
+    
+    # 如果AI响应中已经有格式化的交易信号章节，提取它
+    if "## 量化交易信号分析" in ai_response:
+        lines = ai_response.split('\n')
+        signal_lines = []
+        in_signal_section = False
+        
+        for line in lines:
+            if "## 量化交易信号分析" in line:
+                in_signal_section = True
+                signal_lines.append(line)
+            elif in_signal_section:
+                if line.startswith("## ") and "## 量化交易信号分析" not in line:
+                    break
+                signal_lines.append(line)
+        
+        if signal_lines:
+            return '\n'.join(signal_lines)
+    
+    # 否则，尝试提取信号信息并格式化
+    signal_info = []
+    
+    # 尝试提取综合信号
+    if "综合信号" in ai_response:
+        for line in ai_response.split('\n'):
+            if "综合信号" in line:
+                signal_info.append(line.strip())
+            if len(signal_info) >= 2:  # 提取综合信号和置信度
+                break
+    
+    # 尝试提取风险管理建议
+    if "风险管理建议" in ai_response:
+        in_risk_section = False
+        for line in ai_response.split('\n'):
+            if "风险管理建议" in line:
+                in_risk_section = True
+            elif in_risk_section:
+                if line.startswith("-") or line.startswith("*"):
+                    signal_info.append(line.strip())
+                elif not line.strip():
+                    continue
+                else:
+                    break
+            if len(signal_info) >= 6:  # 限制提取的行数
+                break
+    
+    if signal_info:
+        return "## 量化交易信号摘要\n" + "\n".join(signal_info)
+    
+    return None
 
 
 def _fetch_indicator_snapshot(stock_code: str) -> Dict[str, Any]:
@@ -579,3 +696,349 @@ def analyze_stock(stock_code: str, stock_name: str, output_dir: str) -> Optional
             else:
                 print(f"[ERROR] {stock_name}({stock_code}) 分析失败，达到最大重试次数")
                 return None
+
+
+def _get_enhanced_technical_analysis(technical_analyzer, stock_code: str, stock_name: str) -> Dict[str, Any]:
+    """
+    增强版技术分析数据获取（B+C方案：模块化集成 + 智能降级）
+    
+    Args:
+        technical_analyzer: 技术分析器实例
+        stock_code: 股票代码
+        stock_name: 股票名称
+        
+    Returns:
+        Dict: 包含技术分析数据、状态和元数据的字典
+    """
+    try:
+        print(f"[INFO] 开始获取{stock_name}({stock_code})的技术分析数据...")
+        
+        # 获取基础技术分析
+        technical_analysis = technical_analyzer.analyze_stock_technical(stock_code, stock_name)
+        
+        # 获取技术分析摘要
+        technical_summary = technical_analyzer.get_technical_analysis_summary(technical_analysis)
+        
+        # 评估数据质量
+        data_status = _evaluate_technical_data_quality(technical_analysis)
+        
+        # 获取数据时效性信息
+        data_freshness = _get_data_freshness(technical_analysis)
+        
+        return {
+            'raw_data': technical_analysis,
+            'summary': technical_summary,
+            'status': data_status,
+            'freshness': data_freshness,
+            'stock_code': stock_code,
+            'stock_name': stock_name,
+            'timestamp': datetime.now().isoformat(),
+            'metadata': {
+                'data_source': technical_analysis.get('technical_data', {}).get('data_source', 'unknown'),
+                'data_period': technical_analysis.get('technical_data', {}).get('data_period', 'unknown'),
+                'data_quality': technical_analysis.get('data_quality', 'unknown'),
+                'integration_level': technical_analysis.get('integration_level', 'unknown'),
+                'has_technical_prompt': 'technical_prompt' in technical_analysis
+            }
+        }
+        
+    except Exception as e:
+        print(f"[WARN] 技术分析获取失败: {e}")
+        return {
+            'error': f'技术分析失败: {str(e)}',
+            'status': 'error',
+            'fallback_data': '技术分析数据暂不可用，建议专注于基本面分析',
+            'recommendation': '后续可重新尝试获取技术分析数据',
+            'timestamp': datetime.now().isoformat()
+        }
+
+
+def _determine_integration_level(technical_data: Dict[str, Any]) -> str:
+    """
+    根据技术分析质量决定集成深度（智能降级策略）
+
+    Args:
+        technical_data: 技术分析数据
+
+    Returns:
+        str: 集成级别（'deep'/'moderate'/'basic'/'fallback'）
+    """
+    # 优先使用TechnicalAnalyzer返回的integration_level
+    metadata = technical_data.get('metadata', {})
+    analyzer_integration_level = metadata.get('integration_level')
+    if analyzer_integration_level:
+        return analyzer_integration_level
+
+    # 降级：根据数据质量评估
+    if technical_data.get('status') == 'error':
+        return 'fallback'
+
+    status = technical_data.get('status', 'unknown')
+    has_technical_prompt = metadata.get('has_technical_prompt', False)
+
+    # 检查数据时效性
+    freshness = technical_data.get('freshness', 'unknown')
+
+    # 集成级别决策逻辑
+    if status == 'excellent' and has_technical_prompt and freshness in ['fresh', 'recent']:
+        return 'deep'  # 深度集成
+
+    elif status in ['good', 'excellent'] and has_technical_prompt:
+        return 'moderate'  # 适度集成
+
+    elif status in ['warning', 'simulated']:
+        return 'basic'  # 基础集成
+
+    else:
+        return 'fallback'  # 降级模式
+
+
+def _get_technical_summary_for_integration(technical_data: Dict[str, Any], integration_level: str) -> str:
+    """
+    根据集成级别生成相应的技术分析摘要（增强版：包含交易信号）
+    
+    Args:
+        technical_data: 技术分析数据
+        integration_level: 集成级别
+        
+    Returns:
+        str: 格式化后的技术分析摘要
+    """
+    if integration_level == 'fallback':
+        return technical_data.get('fallback_data', '技术分析数据暂不可用')
+    
+    raw_data = technical_data.get('raw_data', {})
+    trading_signal = raw_data.get('trading_signal', {})
+    
+    # 构建基础摘要
+    base_summary = raw_data.get('technical_data', {}).get('summary', '')
+    
+    # 如果有交易信号，添加到摘要中
+    if trading_signal:
+        signal = trading_signal.get('signal', '未知')
+        confidence = trading_signal.get('confidence', 0)
+        price = trading_signal.get('price', 0)
+        
+        signal_summary = f"\n【量化交易信号】{signal}（置信度{confidence:.1f}%，价格{price:.2f}元）"
+        
+        if trading_signal.get('stop_loss'):
+            stop_loss = trading_signal.get('stop_loss')
+            take_profit = trading_signal.get('take_profit')
+            signal_summary += f"\n  - 止损位：{stop_loss:.2f}元 | 止盈位：{take_profit:.2f}元"
+    else:
+        signal_summary = ""
+    
+    if integration_level == 'basic':
+        return (base_summary or '技术分析数据有限') + signal_summary
+    
+    elif integration_level in ['moderate', 'deep']:
+        metadata = technical_data.get('metadata', {})
+        data_source = metadata.get('data_source', '未知')
+        data_quality = metadata.get('data_quality', 'unknown')
+        
+        summary_parts = [base_summary or '技术分析数据']
+        summary_parts.append(f"数据来源: {data_source} | 数据质量: {data_quality}")
+        summary_parts.append(signal_summary)
+        
+        return "\n".join(summary_parts)
+    
+    else:
+        return '技术分析数据准备中'
+
+
+def _evaluate_technical_data_quality(technical_analysis: Dict[str, Any]) -> str:
+    """
+    评估技术分析数据质量
+
+    Args:
+        technical_analysis: 技术分析原始数据
+
+    Returns:
+        str: 质量评级（'excellent'/'good'/'warning'/'error'）
+    """
+    try:
+        # 直接使用TechnicalAnalyzer返回的data_quality字段
+        if 'data_quality' in technical_analysis:
+            return technical_analysis['data_quality']
+
+        # 兼容旧版本：检查technical_data中的data_status
+        tech_data = technical_analysis.get('technical_data', {})
+
+        # 检查是否有有效数据
+        if not tech_data:
+            return 'error'
+
+        # 使用data_status字段评估
+        data_status = tech_data.get('data_status', 'unknown')
+        if data_status in ['excellent', 'good', 'warning', 'error', 'simulated']:
+            return data_status
+
+        # 检查数据完整性
+        required_fields = ['current_price', 'data_status']
+        missing_fields = [field for field in required_fields if field not in tech_data]
+
+        if missing_fields:
+            return 'warning'
+
+        # 检查数据新鲜度
+        freshness_days = tech_data.get('data_freshness_days', 999)
+        if freshness_days <= 1:
+            return 'excellent'
+        elif freshness_days <= 3:
+            return 'good'
+        elif freshness_days <= 7:
+            return 'warning'
+        else:
+            return 'warning'
+
+    except Exception as e:
+        print(f"[WARN] 数据质量评估异常: {e}")
+        return 'error'
+
+
+def _get_data_freshness(technical_analysis: Dict[str, Any]) -> str:
+    """
+    评估技术分析数据的新鲜度
+    
+    Args:
+        technical_analysis: 技术分析原始数据
+        
+    Returns:
+        str: 新鲜度评级（'fresh'/'recent'/'acceptable'/'stale'）
+    """
+    try:
+        tech_data = technical_analysis.get('technical_data', {})
+        data_timestamp = tech_data.get('last_update')
+        
+        if not data_timestamp:
+            return 'unknown'
+        
+        # 转换为datetime对象进行比较
+        if isinstance(data_timestamp, str):
+            from datetime import datetime
+            data_time = datetime.fromisoformat(data_timestamp.replace('Z', '+00:00'))
+        else:
+            data_time = data_timestamp
+        
+        current_time = datetime.now()
+        time_diff = current_time - data_time
+        
+        if time_diff.total_seconds() < 3600:  # 1小时内
+            return 'fresh'
+        elif time_diff.total_seconds() < 86400:  # 24小时内
+            return 'recent'
+        elif time_diff.total_seconds() < 604800:  # 7天内
+            return 'acceptable'
+        else:
+            return 'stale'
+            
+    except Exception:
+        return 'unknown'
+
+
+def _get_technical_prompt_for_analysis(technical_data: Dict[str, Any], integration_level: str) -> str:
+    """
+    根据集成级别生成技术分析提示词（增强版：直接使用TechnicalAnalyzer生成的prompt）
+    
+    Args:
+        technical_data: 技术分析数据
+        integration_level: 集成级别
+        
+    Returns:
+        str: 格式化后的技术分析提示词
+    """
+    if integration_level == 'fallback':
+        return '技术分析数据暂不可用，建议专注于基本面分析'
+    
+    raw_data = technical_data.get('raw_data', {})
+    
+    # 直接使用TechnicalAnalyzer生成的technical_prompt（已包含交易信号）
+    technical_prompt = raw_data.get('technical_prompt', '')
+    
+    if integration_level == 'basic':
+        return technical_prompt or '技术分析数据有限'
+    
+    elif integration_level in ['moderate', 'deep']:
+        # TechnicalAnalyzer的prompt已经包含了数据质量和交易信号信息
+        return technical_prompt
+    
+    else:
+        return '技术分析数据准备中'
+
+
+def _get_technical_conclusion_for_investment(technical_data: Dict[str, Any], integration_level: str) -> str:
+    """
+    根据集成级别生成投资建议中的技术分析结论（增强版：包含量化交易信号）
+    
+    Args:
+        technical_data: 技术分析数据
+        integration_level: 集成级别
+        
+    Returns:
+        str: 格式化后的技术分析结论
+    """
+    if integration_level == 'fallback':
+        return '技术面分析数据有限，建议谨慎参考'
+    
+    raw_data = technical_data.get('raw_data', {})
+    tech_data = raw_data.get('technical_data', {})
+    trading_signal = raw_data.get('trading_signal', {})
+    
+    if integration_level == 'basic':
+        current_price = tech_data.get('current_price', 'N/A')
+        data_period = tech_data.get('data_period', '未知')
+        conclusion = f"技术指标显示：当前价格{current_price}，数据周期{data_period}"
+        
+        # 添加交易信号（如果有）
+        if trading_signal:
+            signal = trading_signal.get('signal', '未知')
+            conclusion += f"\n量化信号：{signal}"
+        
+        return conclusion
+    
+    elif integration_level == 'moderate':
+        current_price = tech_data.get('current_price', 'N/A')
+        data_period = tech_data.get('data_period', '未知')
+        trend = tech_data.get('trend', '未知')
+        conclusion = f"技术面分析：当前价格{current_price}，趋势{trend}，数据周期{data_period}"
+        
+        # 添加交易信号（如果有）
+        if trading_signal:
+            signal = trading_signal.get('signal', '未知')
+            confidence = trading_signal.get('confidence', 0)
+            conclusion += f"\n量化信号：{signal}（置信度{confidence:.1f}%）"
+        
+        return conclusion
+    
+    elif integration_level == 'deep':
+        current_price = tech_data.get('current_price', 'N/A')
+        data_period = tech_data.get('data_period', '未知')
+        trend = tech_data.get('trend', '未知')
+        support_level = tech_data.get('support', 'N/A')
+        resistance_level = tech_data.get('resistance', 'N/A')
+        
+        conclusion_parts = [
+            f"当前价格: {current_price}",
+            f"技术趋势: {trend}",
+            f"支撑位: {support_level}",
+            f"阻力位: {resistance_level}",
+            f"数据周期: {data_period}"
+        ]
+        
+        # 添加量化交易信号（如果有）
+        if trading_signal:
+            signal = trading_signal.get('signal', '未知')
+            confidence = trading_signal.get('confidence', 0)
+            conclusion_parts.append(f"量化信号: {signal}（置信度{confidence:.1f}%）")
+            
+            # 添加风险管理建议
+            if trading_signal.get('stop_loss'):
+                stop_loss = trading_signal.get('stop_loss')
+                take_profit = trading_signal.get('take_profit')
+                risk_reward = trading_signal.get('risk_reward')
+                conclusion_parts.append(f"风险管理: 止损{stop_loss:.2f} | 止盈{take_profit:.2f} | 风险回报比1:{risk_reward:.1f}")
+        
+        return "技术指标综合分析：" + " | ".join(conclusion_parts)
+    
+    else:
+        return '技术面分析数据准备中'

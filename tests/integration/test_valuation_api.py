@@ -5,13 +5,17 @@
 
 import os
 import sys
-sys.path.append(os.path.dirname(__file__))
-
-from lixinger_provider import LixingerProvider
+from pathlib import Path
 from dotenv import load_dotenv
+
+# 添加项目根目录到Python路径
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
 
 # 加载环境变量
 load_dotenv()
+
+from stock_analyzer.api.lixinger_provider import LixingerProvider
 
 def test_valuation_api():
     """测试理杏仁估值数据API"""

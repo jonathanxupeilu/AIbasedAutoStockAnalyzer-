@@ -9,9 +9,10 @@ import sys
 import os
 
 # 添加项目根目录到路径
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
 
-from analyst import (
+from stock_analyzer.core.analyst import (
     _load_analysis_framework,
     _get_default_framework,
     _build_prompt,
